@@ -1,0 +1,52 @@
+---
+- hosts: all
+  become: yes
+
+  vars_prompt:
+  - name: fedora_version
+    prompt: Fedora version to upgrade to
+    private: no
+
+  tasks:
+  - name: Install prerequisites
+    dnf:
+      name:
+      - dnf-plugin-system-upgrade
+      - remove-retired-packages
+      state: latest
+  - name: Clean previous possible download
+    command: dnf system-upgrade clean
+    register: clean
+  - name: Download latest release
+    command: dnf system-upgrade download --releasever={{ fedora_version }} -y
+    register: download
+
+    # handle the case of trying to upgrade to the same version the system already is
+    # the command will return rc 1 and the error string, so specifically ignore it as an error, but also don't view it
+    # as being changed
+    failed_when:
+    - download.rc != 1
+    - "'Error: Need a --releasever greater than the current system version.' not in download.stderr"
+    - "'Download complete!' not in download.stdout"
+    changed_when:
+    - download.rc != 1
+    - "'Error: Need a --releasever greater than the current system version.' not in download.stderr"
+    - "'Download complete!' in download.stdout"
+  # - debug:
+  #     var: download
+  - block:
+    - name: Initiate install
+      command: dnf system-upgrade reboot
+
+      # the remote closes the SSH connection which ansible will error on, ignore it and just continue
+      ignore_errors: yes
+    - name: Wait for system to come back online
+      wait_for_connection:
+        delay: 30
+        timeout: 180
+    when: download.changed
+  - name: Remove retired packages
+    command: remove-retired-packages
+  - name: Remove unused packages
+    dnf:
+      autoremove: yes

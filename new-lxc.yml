@@ -1,0 +1,36 @@
+---
+-
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+  - name: lxc_host
+    prompt: Target LXC host
+    private: no
+  - name: container_name
+    prompt: Container name
+    private: no
+
+  tasks:
+  - block:
+    - name: Clone base Fedora template
+      command: lxc-copy -n base-fedora -N {{ container_name }} -s -B btrfs
+    - name: Modify container configuration
+      replace:
+        path: /var/lib/lxc/{{ container_name }}/config
+        regexp: 'base-fedora'
+        replace: '{{ container_name }}'
+    - name: Start container
+      command: lxc-start {{ container_name }}
+    - name: Wait for container to run
+      command: lxc-wait -n {{ container_name }} -s RUNNING
+    - name: Enable container to run at boot
+      systemd:
+        name: lxc@{{ container_name }}.service
+        enabled: yes
+    - name: Get container IP address
+      command: lxc-ls --filter={{ container_name }} -f -F IPV4
+      register: ip_address
+    - debug:
+        var: ip_address['stdout_lines'][1]
+    become: yes
+    delegate_to: '{{ lxc_host }}'

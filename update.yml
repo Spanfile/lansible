@@ -1,0 +1,21 @@
+---
+- hosts: all
+  become: yes
+
+  tasks:
+    - name: Update apt packages
+      apt:
+        update_cache: yes
+        upgrade: full
+        autoremove: yes
+      when: ansible_facts['os_family'] == "Debian"
+    - block:
+        - name: Update dnf packages
+          dnf:
+            name: "*"
+            update_cache: yes
+            state: latest
+        - name: Remove unneeded packages
+          dnf:
+            autoremove: yes
+      when: ansible_facts['os_family'] == "RedHat"

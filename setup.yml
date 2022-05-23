@@ -1,0 +1,19 @@
+---
+- hosts: all
+  remote_user: "{{ admin_user }}"
+  become: yes
+
+  tasks:
+  - name: Add Ansible user
+    user:
+      name: ansible
+  - name: Add Ansible user to sudoers
+    copy:
+      dest: "/etc/sudoers.d/ansible"
+      content: "ansible  ALL=(ALL)  NOPASSWD: ALL"
+      validate: visudo -cf %s
+  - name: Deploy SSH key
+    authorized_key:
+      user: ansible
+      key: "{{ lookup('file', 'id_ecdsa.pub') }}"
+      state: present

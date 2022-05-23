@@ -1,0 +1,25 @@
+---
+- hosts: all
+  become: yes
+  vars_prompt:
+  - name: admin_password
+    prompt: Admin user password (leave empty if not setting)
+    encrypt: sha512_crypt
+    confirm: yes
+
+  tasks:
+    - name: Set admin user authorized keys
+      authorized_key:
+        exclusive: yes
+        user: "{{ admin_user }}"
+        key: "{{ lookup('file', 'files/pubkeys') }}"
+      tags:
+      - always
+    - name: Set admin user password
+      user:
+        name: "{{ admin_user }}"
+        update_password: always
+        password: "{{ admin_password }}"
+      tags:
+      - never
+      - pass

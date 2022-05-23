@@ -1,0 +1,14 @@
+- hosts: dns
+  become: yes
+
+  tasks:
+  - name: Copy lan-hosts
+    copy:
+      src: lan-hosts
+      dest: /etc/pdns-recursor/lan-hosts
+    register: lan_hosts
+  - name: Restart PDNS Recursor
+    systemd:
+      name: pdns-recursor
+      state: restarted
+    when: lan_hosts.changed

@@ -1,0 +1,80 @@
+---
+- vars_prompt:
+  - name: source_lxc
+    prompt: Source LXC host
+    private: no
+  - name: target_lxc
+    prompt: Target LXC host
+    private: no
+  - name: container_name
+    prompt: Container name
+    private: no
+
+  hosts: '{{ target_lxc }}'
+  become: yes
+
+  tasks:
+  # create container archive
+  - delegate_to: '{{ source_lxc }}'
+    block:
+    - name: Check if container is running in source
+      command: lxc-ls --filter={{ container_name }} -f -F state
+      register: container_state
+    - when: "'RUNNING' in container_state.stdout"
+      block:
+      - name: Stop container in source
+        command: lxc-stop {{ container_name }}
+      - name: Wait for container to stop
+        command: lxc-wait -n {{ container_name }} -s STOPPED
+    - name: Create container archive in source
+      community.general.archive:
+        path: /var/lib/lxc/{{ container_name }}
+        dest: '{{ container_name }}.archive'
+        format: bz2
+    - name: Fetch container archive
+      become: no
+      fetch:
+        src: '{{ container_name }}.archive'
+        dest: ./
+        flat: yes
+    
+  # transfer container archive to destination and run
+  - name: Create container directory structure
+    file:
+      path: /var/lib/lxc/{{ container_name }}
+      state: directory
+      mode: '0770'
+  - name: Create container rootfs BTRFS subvolume
+    command: btrfs subvolume create /var/lib/lxc/{{ container_name }}/rootfs
+  - name: Unpack container archive
+    unarchive:
+      # remote_src: yes
+      src: ./{{ container_name }}.archive
+      dest: /var/lib/lxc
+  - name: Start container
+    command: lxc-start {{ container_name }}
+  - name: Wait for container to run
+    command: lxc-wait -n {{ container_name }} -s RUNNING
+  - name: Enable container to run at boot
+    systemd:
+      name: lxc@{{ container_name }}.service
+      enabled: yes
+
+  # clean up
+  - name: Delete container archive
+    file:
+      path: /tmp/{{ container_name }}.archive
+      state: absent
+  - delegate_to: '{{ source_lxc }}'
+    block:
+    - name: Disable container from running at boot
+      systemd:
+        name: lxc@{{ container_name }}.service
+        enabled: no
+    - name: Delete container archive in source
+      file:
+        path: '{{ container_name }}.archive'
+        state: absent
+    - name: Destroy container in source
+      delegate_to: '{{ source_lxc }}'
+      command: lxc-destroy {{ container_name }}
