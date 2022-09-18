@@ -1,0 +1,14 @@
+- hosts: pis
+  become: yes
+
+  tasks:
+    - name: Copy chrony config file
+      copy:
+        src: chrony.conf
+        dest: /etc/chrony/chrony.conf
+    - name: Restart chrony
+      service:
+        name: chronyd
+        state: restarted
+    - name: LBU commit
+      command: lbu ci

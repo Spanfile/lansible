@@ -1,0 +1,15 @@
+- hosts: pis
+  become: yes
+
+  tasks:
+    - name: Copy apk repositories file
+      copy:
+        src: apk-repositories
+        dest: /etc/apk/repositories
+    - name: Update packages
+      apk:
+        update_cache: yes
+        upgrade: yes
+        available: yes
+    - name: LBU commit
+      command: lbu ci
