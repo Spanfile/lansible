@@ -1,0 +1,41 @@
+#!/bin/bash
+
+LXC_CONTAINER=$1
+NOW=$(date +%Y-%m-%d-%H-%M-%S)
+
+export BORG_PASSPHRASE='{{ borg_passphrase }}'
+export BORG_REPO=lxc@cliff.lan:/borg/lxc/$LXC_CONTAINER
+export BORG_RSH='ssh -i /home/lxc/.ssh/id_ed25519'
+
+echo "Creating BTRFS snapshot"
+
+btrfs subvolume snapshot \
+    -r \
+    /var/lib/lxc/$LXC_CONTAINER/rootfs \
+    /var/lib/lxc/$LXC_CONTAINER/rootfs-$NOW
+
+echo "Creating backup"
+
+borg create \
+    --stats \
+    --show-rc \
+    --compression auto,lzma,6 \
+    ::{hostname}-{now} \
+    /var/lib/lxc/$LXC_CONTAINER
+
+echo "Deleting BTRFS snapshot"
+
+btrfs subvolume delete \
+    /var/lib/lxc/$LXC_CONTAINER/rootfs-$NOW
+
+echo "Pruning repository"
+
+borg prune \
+    --keep-daily    14 \
+    --keep-monthly  6
+
+echo "Compacting repository"
+
+borg compact
+
+echo "Done"

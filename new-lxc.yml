@@ -9,6 +9,8 @@
   - name: container_name
     prompt: Container name
     private: no
+  - name: borg_passphrase
+    prompt: Borg LXC backup encryption passphrase
 
   tasks:
   - block:
@@ -27,6 +29,21 @@
       systemd:
         name: lxc@{{ container_name }}.service
         enabled: yes
+    - name: Create container backup borg repository
+      command: borg init --encryption repokey-blake2
+      environment:
+        BORG_RSH: ssh -i /home/lxc/.ssh/id_ed25519
+        BORG_PASSPHRASE: '{{ borg_passphrase }}'
+        BORG_REPO: lxc@cliff.lan:/borg/lxc/{{ container_name }}
+    - name: Enable container backup
+      systemd:
+        name: lxc-backup@{{ container_name }}.timer
+        state: started
+        enabled: yes
+    - name: Start initial backup
+      systemd:
+        name: lxc-backup@{{ container_name }}.service
+        state: started
     - name: Get container IP address
       command: lxc-ls --filter={{ container_name }} -f -F IPV4
       register: ip_address

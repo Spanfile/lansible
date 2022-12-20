@@ -30,14 +30,14 @@
       community.general.archive:
         path: /var/lib/lxc/{{ container_name }}
         dest: '{{ container_name }}.archive'
-        format: bz2
+        format: xz
     - name: Fetch container archive
       become: no
       fetch:
         src: '{{ container_name }}.archive'
         dest: ./
         flat: yes
-    
+
   # transfer container archive to destination and run
   - name: Create container directory structure
     file:
@@ -59,6 +59,11 @@
     systemd:
       name: lxc@{{ container_name }}.service
       enabled: yes
+  - name: Enable container backup
+    systemd:
+      name: lxc-backup@{{ container_name }}.timer
+      state: started
+      enabled: yes
 
   # clean up
   - name: Delete container archive
@@ -76,5 +81,8 @@
         path: '{{ container_name }}.archive'
         state: absent
     - name: Destroy container in source
-      delegate_to: '{{ source_lxc }}'
       command: lxc-destroy {{ container_name }}
+    - name: Disable container backup in source
+      systemd:
+        name: lxc-backup@{{ container_name }}.timer
+        enabled: no

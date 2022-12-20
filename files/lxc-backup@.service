@@ -1,0 +1,6 @@
+[Unit]
+Description=LXC container backup: %i
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /usr/local/bin/lxc-backup.sh %i

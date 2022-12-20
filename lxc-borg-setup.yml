@@ -1,0 +1,71 @@
+- hosts: lxc_hosts
+  become: yes
+
+  vars_prompt:
+  - name: borg_passphrase
+    prompt: Borg LXC backup encryption passphrase
+
+  tasks:
+  - name: Install borg
+    dnf:
+      name: borgbackup
+      state: latest
+  - name: Create LXC user
+    user:
+      name: lxc
+      system: yes
+      shell: /bin/bash
+      generate_ssh_key: yes
+      ssh_key_type: ed25519
+    register: lxc_user
+  - name: Add LXC user public SSH keys to cliff
+    delegate_to: cliff.lan
+    authorized_key:
+      user: lxc
+      key: '{{ lxc_user.ssh_public_key }}'
+  - name: Copy systemd service file
+    copy:
+      src: lxc-backup@.service
+      dest: /etc/systemd/system/
+  - name: Copy systemd timer file
+    copy:
+      src: lxc-backup@.timer
+      dest: /etc/systemd/system/
+  - name: Reload systemd daemon
+    systemd:
+      daemon_reload: yes
+  - name: Copy LXC backup script
+    template:
+      src: lxc-backup.sh.j2
+      dest: /usr/local/bin/lxc-backup.sh
+      mode: 770
+  - name: Fetch list of running LXC containers
+    command: lxc-ls -1 --running
+    register: lxc_containers
+  - name: Check for existing backup repositories
+    delegate_to: cliff.lan
+    stat:
+      path: /borg/lxc/{{ item }}
+    loop: '{{ lxc_containers.stdout_lines }}'
+    register: backup_repository
+  - name: Create borg repositories for new LXC containers
+    command: borg init --encryption repokey-blake2
+    environment:
+      BORG_RSH: ssh -i /home/lxc/.ssh/id_ed25519
+      BORG_PASSPHRASE: '{{ borg_passphrase }}'
+      BORG_REPO: lxc@cliff.lan:/borg/lxc/{{ item }}
+    loop: '{{ backup_repository.results }}'
+    when: not item.stat.exists
+  - name: Enable backup timer for new LXC containers
+    systemd:
+      name: lxc-backup@{{ item }}.timer
+      state: started
+      enabled: yes
+    loop: '{{ backup_repository.results }}'
+    when: not item.stat.exists
+  - name: Start initial backup jobs for new LXC containers
+    systemd:
+      name: lxc-backup@{{ item }}.service
+      state: started
+    loop: '{{ backup_repository.results }}'
+    when: not item.stat.exists

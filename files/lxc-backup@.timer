@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LXC container backup daily: %i
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=3h
+Persistent=true
+
+[Install]
+WantedBy=multi-user.target
