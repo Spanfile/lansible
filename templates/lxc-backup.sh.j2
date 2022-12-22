@@ -1,41 +1,43 @@
 #!/bin/bash
 
 LXC_CONTAINER=$1
-NOW=$(date +%Y-%m-%d-%H-%M-%S)
 
 export BORG_PASSPHRASE='{{ borg_passphrase }}'
 export BORG_REPO=lxc@cliff.lan:/borg/lxc/$LXC_CONTAINER
 export BORG_RSH='ssh -i /home/lxc/.ssh/id_ed25519'
 
-echo "Creating BTRFS snapshot"
+if [ -d "/var/lib/lxc/$LXC_CONTAINER/rootfs-backup" ]; then
+    echo "Another backup is already running"
+    exit 1
+fi
 
+echo "Creating BTRFS snapshot"
 btrfs subvolume snapshot \
     -r \
     /var/lib/lxc/$LXC_CONTAINER/rootfs \
-    /var/lib/lxc/$LXC_CONTAINER/rootfs-$NOW
+    /var/lib/lxc/$LXC_CONTAINER/rootfs-backup
 
 echo "Creating backup"
-
+cd /var/lib/lxc
 borg create \
     --stats \
-    --show-rc \
+    --list \
+    --filter AME \
     --compression auto,lzma,6 \
+    --exclude $LXC_CONTAINER/rootfs \
     ::{hostname}-{now} \
-    /var/lib/lxc/$LXC_CONTAINER
+    $LXC_CONTAINER
 
 echo "Deleting BTRFS snapshot"
-
 btrfs subvolume delete \
-    /var/lib/lxc/$LXC_CONTAINER/rootfs-$NOW
+    /var/lib/lxc/$LXC_CONTAINER/rootfs-backup
 
 echo "Pruning repository"
-
 borg prune \
     --keep-daily    14 \
     --keep-monthly  6
 
 echo "Compacting repository"
-
 borg compact
 
 echo "Done"

@@ -1,0 +1,31 @@
+#!/bin/bash
+
+LXC_CONTAINER=$1
+ARCHIVE=$2
+
+export BORG_PASSPHRASE='{{ borg_passphrase }}'
+export BORG_REPO=lxc@cliff.lan:/borg/lxc/$LXC_CONTAINER
+export BORG_RSH='ssh -i /home/lxc/.ssh/id_ed25519'
+
+if [ -d "/var/lib/lxc/$LXC_CONTAINER" ]; then
+    echo "Container already exists"
+    exit 1
+fi
+
+echo "Restore archive: $2"
+cd /var/lib/lxc
+borg extract \
+    --list \
+    --progress \
+    ::$ARCHIVE
+
+echo "Create rootfs BTRFS subvolume"
+btrfs subvolume create /var/lib/lxc/$LXC_CONTAINER/rootfs
+
+echo "Move rootfs from backup"
+mv /var/lib/lxc/$LXC_CONTAINER/rootfs-backup/* /var/lib/lxc/$LXC_CONTAINER/rootfs/
+
+echo "Delete backup rootfs"
+rm -rf /var/lib/lxc/$LXC_CONTAINER/rootfs-backup
+
+echo "Done"

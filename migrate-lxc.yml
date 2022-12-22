@@ -1,4 +1,3 @@
----
 - vars_prompt:
   - name: source_lxc
     prompt: Source LXC host
@@ -10,12 +9,13 @@
     prompt: Container name
     private: no
 
-  hosts: '{{ target_lxc }}'
-  become: yes
+  hosts: localhost
+  gather_facts: no
 
   tasks:
-  # create container archive
+  # prepare source
   - delegate_to: '{{ source_lxc }}'
+    become: yes
     block:
     - name: Check if container is running in source
       command: lxc-ls --filter={{ container_name }} -f -F state
@@ -23,66 +23,59 @@
     - when: "'RUNNING' in container_state.stdout"
       block:
       - name: Stop container in source
-        command: lxc-stop {{ container_name }}
+        systemd:
+          name: lxc@{{ container_name }}.service
+          state: stopped
       - name: Wait for container to stop
         command: lxc-wait -n {{ container_name }} -s STOPPED
-    - name: Create container archive in source
-      community.general.archive:
-        path: /var/lib/lxc/{{ container_name }}
-        dest: '{{ container_name }}.archive'
-        format: xz
-    - name: Fetch container archive
-      become: no
-      fetch:
-        src: '{{ container_name }}.archive'
-        dest: ./
-        flat: yes
 
-  # transfer container archive to destination and run
-  - name: Create container directory structure
-    file:
-      path: /var/lib/lxc/{{ container_name }}
-      state: directory
-      mode: '0770'
-  - name: Create container rootfs BTRFS subvolume
-    command: btrfs subvolume create /var/lib/lxc/{{ container_name }}/rootfs
-  - name: Unpack container archive
-    unarchive:
-      # remote_src: yes
-      src: ./{{ container_name }}.archive
-      dest: /var/lib/lxc
-  - name: Start container
-    command: lxc-start {{ container_name }}
-  - name: Wait for container to run
-    command: lxc-wait -n {{ container_name }} -s RUNNING
-  - name: Enable container to run at boot
-    systemd:
-      name: lxc@{{ container_name }}.service
-      enabled: yes
-  - name: Enable container backup
-    systemd:
-      name: lxc-backup@{{ container_name }}.timer
-      state: started
-      enabled: yes
-
-  # clean up
-  - name: Delete container archive
-    file:
-      path: /tmp/{{ container_name }}.archive
-      state: absent
-  - delegate_to: '{{ source_lxc }}'
+  # prepare target
+  - delegate_to: '{{ target_lxc }}'
+    become: yes
     block:
-    - name: Disable container from running at boot
+    - name: Create container directory structure in target
+      file:
+        path: /var/lib/lxc/{{ container_name }}
+        state: directory
+        mode: '0770'
+    - name: Create container rootfs BTRFS subvolume in target
+      command: btrfs subvolume create /var/lib/lxc/{{ container_name }}/rootfs
+  
+  # do the needful
+  - name: Migrate container
+    shell: ssh ansible@{{ source_lxc }} -o ForwardAgent=yes 'sudo tar -cf - -C /var/lib/lxc {{ container_name }} | ssh {{ target_lxc }} -o StrictHostKeyChecking=accept-new "sudo tar -xf - -C /var/lib/lxc"'
+
+  # finalise target
+  - delegate_to: '{{ target_lxc }}'
+    become: yes
+    block:
+    - name: Run container in target if it was running in source
+      systemd:
+        name: lxc@{{ container_name }}.service
+        state: started
+      when: "'RUNNING' in container_state.stdout"
+    - name: Enable container to run at boot in target
+      systemd:
+        name: lxc@{{ container_name }}.service
+        enabled: yes
+    - name: Enable container backup timer in target
+      systemd:
+        name: lxc-backup@{{ container_name }}.timer
+        state: started
+        enabled: yes
+
+  # clean up source
+  - delegate_to: '{{ source_lxc }}'
+    become: yes
+    block:
+    - name: Disable container from running at boot in source
       systemd:
         name: lxc@{{ container_name }}.service
         enabled: no
-    - name: Delete container archive in source
-      file:
-        path: '{{ container_name }}.archive'
-        state: absent
-    - name: Destroy container in source
-      command: lxc-destroy {{ container_name }}
     - name: Disable container backup in source
       systemd:
         name: lxc-backup@{{ container_name }}.timer
+        state: stopped
         enabled: no
+    - name: Destroy container in source
+      command: lxc-destroy {{ container_name }}

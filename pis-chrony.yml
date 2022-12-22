@@ -4,7 +4,7 @@
   tasks:
     - name: Copy chrony config file
       copy:
-        src: chrony.conf
+        src: pi-chrony.conf
         dest: /etc/chrony/chrony.conf
     - name: Restart chrony
       service:

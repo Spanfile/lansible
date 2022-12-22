@@ -3,13 +3,14 @@
 
   vars_prompt:
   - name: borg_passphrase
-    prompt: Borg LXC backup encryption passphrase
+    prompt: Borg LXC backup encryption passphrase (leave empty if not updating backup scripts)
 
   tasks:
   - name: Install borg
     dnf:
       name: borgbackup
       state: latest
+
   - name: Create LXC user
     user:
       name: lxc
@@ -23,6 +24,7 @@
     authorized_key:
       user: lxc
       key: '{{ lxc_user.ssh_public_key }}'
+
   - name: Copy systemd service file
     copy:
       src: lxc-backup@.service
@@ -34,11 +36,19 @@
   - name: Reload systemd daemon
     systemd:
       daemon_reload: yes
+
   - name: Copy LXC backup script
     template:
       src: lxc-backup.sh.j2
       dest: /usr/local/bin/lxc-backup.sh
       mode: 770
+    when: borg_passphrase | length > 0
+  - name: Copy LXC backup restore script
+    template:
+      src: lxc-restore.sh.j2
+      dest: /usr/local/bin/lxc-restore.sh
+      mode: 0770
+
   - name: Fetch list of running LXC containers
     command: lxc-ls -1 --running
     register: lxc_containers

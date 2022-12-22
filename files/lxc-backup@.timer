@@ -3,7 +3,7 @@ Description=Run LXC container backup daily: %i
 
 [Timer]
 OnCalendar=daily
-RandomizedDelaySec=3h
+RandomizedDelaySec=1h
 Persistent=true
 
 [Install]

@@ -1,0 +1,14 @@
+- hosts: physical_hosts
+  become: yes
+
+  tasks:
+  - name: Copy chronyd config file
+    copy:
+      src: physical-chrony.conf
+      dest: /etc/chrony.conf
+    register: config
+  - name: Restart chronyd
+    when: config.changed
+    systemd:
+      name: chronyd
+      state: restarted
